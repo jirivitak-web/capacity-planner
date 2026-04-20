@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plánování Kapacit | BOOTIQ</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div id="app-wrapper" style="display: none; height: 100vh; flex-direction: column;">
+    <header class="main-header">
+        <div class="logo">
+            <h1>PLÁNOVÁNÍ KAPACIT</h1>
+            <span class="brand-tag">BOOTIQ</span>
+        </div>
+        
+        <!-- PŘEPÍNAČ TÝDNŮ -->
+        <div class="week-selector">
+            <button id="prev-week" class="week-btn"><i class="fas fa-chevron-left"></i></button>
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                <select id="week-dropdown" class="week-dropdown-select"></select>
+                <span id="week-date-range" style="font-size: 0.7rem; color: var(--text-muted); margin-top: -2px; font-weight: 600;"></span>
+            </div>
+            <button id="next-week" class="week-btn"><i class="fas fa-chevron-right"></i></button>
+        </div>
+
+        <div class="header-actions">
+            <div id="last-saved" class="status-info"></div>
+        </div>
+    </header>
+
+    <main class="app-container">
+        <!-- LEVÝ PANEL: LIDÉ -->
+        <section class="panel people-panel">
+            <div class="panel-header-custom">
+                <div class="ph-row">
+                    <h2>Lidé</h2>
+                    <button id="add-person-btn" class="btn-primary" style="white-space: nowrap;">+ Člověk</button>
+                </div>
+                <div class="ph-row mt-10">
+                    <div class="filters">
+                        <button class="filter-btn active" data-group="all">Všichni</button>
+                        <button class="filter-btn" data-group="dev">Vývoj</button>
+                        <button class="filter-btn" data-group="design">Design</button>
+                    </div>
+                </div>
+                <div class="ph-row mt-10">
+                    <div class="filters">
+                        <button class="filter-btn filter-btn-pm" data-group="pm">Projektoví manažeři</button>
+                    </div>
+                    <label class="toggle-container">
+                        <input type="checkbox" id="show-inactive-people"> 
+                        <span>Neaktivní</span>
+                    </label>
+                </div>
+            </div>
+            <div id="people-list" class="scroll-area"></div>
+        </section>
+
+        <!-- PRAVÝ PANEL: PROJEKTY -->
+        <section class="panel projects-panel">
+            <div class="panel-header-custom">
+                <div class="ph-row">
+                    <h2>Projekty</h2>
+                    <button id="add-project-btn" class="btn-primary" style="white-space: nowrap;">+ Projekt</button>
+                </div>
+                <div class="ph-row mt-10" style="gap: 10px; align-items: center;">
+                    <div class="filters" id="project-status-filters" style="flex-wrap: nowrap; overflow-x: auto;">
+                        <button class="filter-btn active" data-status="active">Aktivní</button>
+                        <button class="filter-btn" data-status="paused">Pozastaveno</button>
+                        <button class="filter-btn" data-status="finished">Ukončeno</button>
+                        <button class="filter-btn" data-status="all">Všechny</button>
+                    </div>
+                    <select id="project-pm-filter" style="width: 140px; padding: 4px 8px; margin-top: 0; font-size: 0.75rem; flex-shrink: 0;">
+                        <option value="all">Všichni PM</option>
+                        <option value="none">Bez PM</option>
+                    </select>
+                </div>
+            </div>
+            <div id="projects-list" class="scroll-area"></div>
+        </section>
+    </main>
+
+    <!-- MODAL: PŘIDAT K PROJEKTU -->
+    <div id="assign-modal" class="modal">
+        <div class="modal-content">
+            <header>
+                <h3>Přiřadit k projektu</h3>
+                <button class="close-modal">&times;</button>
+            </header>
+            <div class="modal-body">
+                <p id="modal-project-name" class="subtitle"></p>
+                <div class="form-group">
+                    <label>Hledat člověka:</label>
+                    <input type="text" id="person-search" placeholder="Jméno nebo zkratka..." class="form-input">
+                </div>
+                <div class="form-group">
+                    <label>Výběr člověka:</label>
+                    <!-- Vlastní seznam pro lepší podbarvování -->
+                    <div id="person-select-list" class="custom-person-list"></div>
+                </div>
+                <div class="form-group">
+                    <label for="capacity-select">Alokace (vybraný týden):</label>
+                    <select id="capacity-select">
+                        <option value="20">20 % (1 den)</option>
+                        <option value="40">40 % (2 dny)</option>
+                        <option value="60">60 % (3 dny)</option>
+                        <option value="80">80 % (4 dny)</option>
+                        <option value="100" selected>100 % (5 dní)</option>
+                    </select>
+                </div>
+                <div class="modal-actions">
+                    <button id="confirm-assign" class="btn-primary" disabled>Vyberte člověka</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: EDITACE ČLOVĚKA / PROJEKTU -->
+    <div id="edit-modal" class="modal">
+        <div class="modal-content">
+            <header>
+                <h3 id="edit-modal-title">Editace</h3>
+                <button class="close-modal">&times;</button>
+            </header>
+            <div class="modal-body">
+                <div id="edit-person-fields">
+                    <div class="form-group">
+                        <label>Celé jméno:</label>
+                        <input type="text" id="edit-full-name" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label>Zkratka:</label>
+                        <input type="text" id="edit-initials" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label>Skupina:</label>
+                        <select id="edit-group">
+                            <option value="dev">Vývoj</option>
+                            <option value="design">Design</option>
+                            <option value="pm">Projektový manažer</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Max kapacita (%):</label>
+                        <input type="number" id="edit-max-cap" class="form-input" value="100">
+                    </div>
+                    <div class="form-group">
+                        <label class="toggle-container">
+                            <input type="checkbox" id="edit-person-active"> Aktivní
+                        </label>
+                    </div>
+                </div>
+                <div id="edit-project-fields" style="display:none">
+                    <div class="form-group">
+                        <label>Název projektu:</label>
+                        <input type="text" id="edit-project-name" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label>Stav:</label>
+                        <select id="edit-project-status">
+                            <option value="active">Aktivní</option>
+                            <option value="paused">Pozastaveno</option>
+                            <option value="finished">Ukončeno</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Projektový manažer:</label>
+                        <select id="edit-project-pm">
+                            <option value="">-- Bez PM --</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button id="save-edit" class="btn-primary">Uložit změny</button>
+                    <button id="delete-entry" class="btn-secondary" style="color:var(--danger); border-color:var(--danger); margin-top:10px; width:100%">Smazat</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    </div> <!-- konec app-wrapper -->
+
+    <div id="login-overlay" style="position: fixed; top:0; left:0; width:100%; height:100%; background: var(--bg-app); z-index: 9999; display: flex; align-items: center; justify-content: center;">
+        <div style="background: var(--bg-panel); padding: 40px; border-radius: 8px; border: 1px solid var(--border); width: 300px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+            <h2 style="color: var(--primary); margin-bottom: 20px;">BOOTIQ Planner</h2>
+            <input type="text" id="login-user" placeholder="Jméno" class="form-input" style="margin-bottom: 15px; width: 100%;">
+            <input type="password" id="login-pass" placeholder="Heslo" class="form-input" style="margin-bottom: 20px; width: 100%;">
+            <button id="login-btn" class="btn-primary" style="width: 100%;">Vstoupit</button>
+            <div id="login-error" style="color: var(--danger); margin-top: 15px; font-size: 0.85rem; display: none;">Chybné jméno nebo heslo</div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK (Compat verze pro jednoduchost) -->
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-database-compat.js"></script>
+    
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyChiuu2mFFFqz1Iu3URhWchgQyq2PC32to",
+            authDomain: "pm-planner-1c101.firebaseapp.com",
+            databaseURL: "https://pm-planner-1c101-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "pm-planner-1c101",
+            storageBucket: "pm-planner-1c101.firebasestorage.app",
+            messagingSenderId: "381598361450",
+            appId: "1:381598361450:web:3c6e4ddcf6752fe2a1e713"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+    </script>
+
+    <script src="data.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
