@@ -1,65 +1,73 @@
+// ==========================================
+// GLOBÁLNÍ STAV APLIKACE (STATE)
+// Zde držíme všechna data, když s aplikací pracujeme.
+// ==========================================
 let state = {
-    people: [],
-    projects: [],
-    assignments: [] // Nyní bude: { week, personId, projectId, percentage }
+    people: [],      // Seznam všech lidí (jméno, zkratka, skupina, kapacita)
+    projects: [],    // Seznam všech projektů (název, stav, projektový manažer)
+    assignments: []  // Kdo dělá na jakém projektu, v jakém týdnu a na kolik procent
 };
 
-let currentFilterPeople = 'all';
-let currentFilterProjects = 'active';
-let currentFilterProjectPM = 'all';
-let showInactivePeople = false;
+// Proměnné, do kterých si ukládáme to, co má uživatel zrovna naklikané ve filtrech
+let currentFilterPeople = 'all';        // all | dev | design | pm
+let currentFilterProjects = 'active';   // active | paused | finished | all
+let currentFilterProjectPM = 'all';     // ID projektového manažera, podle kterého filtrujeme, nebo 'all'
+let showInactivePeople = false;         // Zda zobrazujeme i "smazané/skryté" lidi
 
-let weeks = [];
-let currentWeek = '';
-let selectedPersonIdForAssign = null;
+// Proměnné pro kalendář
+let weeks = [];           // Pole obsahující všechny týdny v roce (např. "2026-W01")
+let currentWeek = '';     // Který týden je aktuálně zobrazen na obrazovce
+let selectedPersonIdForAssign = null; // Pomocná proměnná pro okno "Přiřadit člověka"
 
-// --- INITIALIZATION ---
+// ==========================================
+// INICIALIZACE (SPUŠTĚNÍ) APLIKACE A FIREBASE
+// ==========================================
 function init() {
+    // 1. Vygenerujeme si všechny týdny a nastavíme ten aktuální
     generateWeeks();
     setCurrentWeek();
+    
+    // 2. Zapneme odchytávání kliknutí na tlačítka
     setupEventListeners();
 
     const status = document.getElementById('last-saved');
     status.textContent = 'Načítám z cloudu...';
 
+    // 3. Magie Firebase: Napojíme se na databázi do složky 'state' a zapneme sledování naživo (.on)
+    // Kdykoliv kdokoliv ve světě změní data (nebo když je načítáme poprvé), spustí se tato funkce.
     db.ref('state').on('value', (snapshot) => {
-        const data = snapshot.val();
+        const data = snapshot.val(); // Získáme surová data z cloudu
+        
         if (data) {
+            // Pokud v cloudu už nějaká data jsou, uložíme je do naší globální proměnné
             state = {
                 people: data.people || [],
                 projects: data.projects || [],
                 assignments: data.assignments || []
             };
         } else {
+            // Pokud je cloud prázdný (např. úplně první spuštění), nahrajeme tam naše tvrdá data z data.js
             state = { ...INITIAL_DATA };
             saveState(); // Vložíme výchozí data do Firebase
         }
         
+        // 4. Teď, když máme data, musíme "překreslit" celou obrazovku, aby to bylo vidět
         renderWeekSelector();
         updatePMFilterDropdown();
         renderPeople();
         renderProjects();
+        
+        // Změníme text dole v liště
         status.textContent = 'Data načtena: ' + new Date().toLocaleTimeString();
     });
 }
 
-function updatePMFilterDropdown() {
-    const select = document.getElementById('project-pm-filter');
-    if (!select) return;
-    const currentVal = select.value || 'all';
-    select.innerHTML = '<option value="all">Všichni PM</option><option value="none">Bez PM</option>';
-    
-    state.people.filter(p => p.group === 'pm').forEach(p => {
-        select.innerHTML += `<option value="${p.id}">${p.fullName} (${p.initials})</option>`;
-    });
-    
-    select.value = currentVal;
-}
-
+// Funkce, která pošle tvůj aktuální STAV aplikace do Googlu (Firebase cloudu)
 function saveState() {
     const status = document.getElementById('last-saved');
     status.textContent = 'Ukládám do cloudu...';
     
+    // Uložíme celý objekt `state` do uzlu 'state' v cloudu
     db.ref('state').set(state, (error) => {
         if (error) {
             status.textContent = 'Chyba ukládání!';
@@ -69,6 +77,21 @@ function saveState() {
             updatePMFilterDropdown();
         }
     });
+}
+
+// Funkce, která naplní roletku (dropdown) pro filtrování podle Projektového manažera nahoře nad projekty
+function updatePMFilterDropdown() {
+    const select = document.getElementById('project-pm-filter');
+    if (!select) return;
+    const currentVal = select.value || 'all';
+    select.innerHTML = '<option value="all">Všichni PM</option><option value="none">Bez PM</option>';
+    
+    // Najdeme všechny lidi, kteří jsou "pm" a přidáme je do roletky
+    state.people.filter(p => p.group === 'pm').forEach(p => {
+        select.innerHTML += `<option value="${p.id}">${p.fullName} (${p.initials})</option>`;
+    });
+    
+    select.value = currentVal;
 }
 
 // --- WEEKS LOGIC ---
@@ -129,9 +152,13 @@ function updateWeekDateLabel() {
     document.getElementById('week-date-range').textContent = range;
 }
 
-// --- RENDERING ---
+// ==========================================
+// VYKRESLOVÁNÍ (RENDERING) - Kreslení do HTML
+// Tyto funkce vezmou data z paměti a udělají z nich kartičky na obrazovce.
+// ==========================================
 
 function renderPeople() {
+    // Vezme kontejner v levém sloupci a celý ho vymaže (aby se nepřekrývaly staré karty)
     const list = document.getElementById('people-list');
     list.innerHTML = '';
 
@@ -153,13 +180,19 @@ function renderPeople() {
         const card = document.createElement('div');
         card.className = `person-card ${!person.active ? 'inactive' : ''}`;
         
+        // DRAG AND DROP (TAŽENÍ MYŠÍ)
+        // Manažery nelze tahat. Aktivní lidi ano.
         if (!isPM && person.active) {
-            card.setAttribute('draggable', 'true');
+            card.setAttribute('draggable', 'true'); // Řekneme HTML, že tato karta jde chytit
+            
+            // Co se stane, když kartu chytím
             card.ondragstart = (e) => {
-                e.dataTransfer.setData('text/plain', person.id);
+                e.dataTransfer.setData('text/plain', person.id); // Zapamatujeme si ID člověka
                 e.dataTransfer.effectAllowed = 'copy';
-                card.classList.add('dragging');
+                card.classList.add('dragging'); // Zprůhledníme ji
             };
+            
+            // Co se stane, když kartu pustím
             card.ondragend = () => {
                 card.classList.remove('dragging');
             };
@@ -208,6 +241,7 @@ function renderPeople() {
 }
 
 function renderProjects() {
+    // Vezme kontejner v pravém sloupci a celý ho vymaže
     const list = document.getElementById('projects-list');
     list.innerHTML = '';
 
@@ -226,19 +260,31 @@ function renderProjects() {
         const card = document.createElement('div');
         card.className = `project-card ${project.status}`;
         
+        // DRAG AND DROP (VHOZENÍ)
+        // Vhazovat lidi jde jen na "Aktivní" projekty
         if (project.status === 'active') {
+            
+            // Když myší s člověkem najedu NAD projekt (žlutý okraj)
             card.ondragover = (e) => {
-                e.preventDefault();
+                e.preventDefault(); // Nutné pro povolení vhození
                 e.dataTransfer.dropEffect = 'copy';
-                card.classList.add('drag-over');
+                card.classList.add('drag-over'); 
             };
+            
+            // Když myší odjedu pryč
             card.ondragleave = () => {
                 card.classList.remove('drag-over');
             };
+            
+            // Když tlačítko myši PUSTÍM (Člověk spadne do projektu)
             card.ondrop = (e) => {
                 e.preventDefault();
                 card.classList.remove('drag-over');
+                
+                // Zjistíme, koho jsme to vlastně táhli (Jeho ID)
                 const personId = e.dataTransfer.getData('text/plain');
+                
+                // Pokud máme ID, hned mu otevřeme okno přiřazení a předvyplníme ho!
                 if (personId) {
                     openAssignModal(project.id, project.name, personId);
                 }
@@ -572,103 +618,38 @@ function setupEventListeners() {
         renderPeople();
     };
 
-    // Reset
-    document.getElementById('reset-data').onclick = () => {
-        if (confirm('Smazat vše a začít znovu?')) {
-            localStorage.removeItem('capacity_planner_state_v3');
-            location.reload();
-        }
-    };
-
-    // CSV
-    document.getElementById('export-csv-btn').onclick = exportToCSV;
-    document.getElementById('import-csv-btn').onclick = () => document.getElementById('csv-file-input').click();
-    document.getElementById('csv-file-input').onchange = importFromCSV;
 }
 
-// --- CSV HANDLERS ---
-function exportToCSV() {
-    let peopleCsv = "id;initials;fullName;group;maxCapacity;active\n";
-    state.people.forEach(p => peopleCsv += `${p.id};${p.initials};${p.fullName};${p.group};${p.maxCapacity};${p.active}\n`);
-    downloadCSV(peopleCsv, "people.csv");
+// --- PŘIHLÁŠOVACÍ LOGIKA ---
 
-    let projectsCsv = "id;name;status;pmId\n";
-    state.projects.forEach(p => projectsCsv += `${p.id};${p.name};${p.status};${p.pmId || ''}\n`);
-    downloadCSV(projectsCsv, "projects.csv");
-
-    let assignmentsCsv = "week;personId;projectId;percentage\n";
-    state.assignments.forEach(a => assignmentsCsv += `${a.week};${a.personId};${a.projectId};${a.percentage}\n`);
-    downloadCSV(assignmentsCsv, "assignments.csv");
+// Pokud už byl uživatel přihlášen v minulosti (má uložený klíč v prohlížeči), pustíme ho hned
+if (localStorage.getItem('bootiq_planner_logged_in') === 'true') {
+    document.getElementById('login-overlay').style.display = 'none';
+    document.getElementById('app-wrapper').style.display = 'flex';
+    init(); // Spustí hlavní aplikaci
 }
 
-function downloadCSV(csv, filename) {
-    // \uFEFF je BOM (Byte Order Mark) - říká Excelu, že to je nativně UTF-8
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.setAttribute("download", filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-}
-
-function importFromCSV(e) {
-    const files = Array.from(e.target.files);
-    if (files.length === 0) return;
-
-    let newPeople = state.people;
-    let newProjects = state.projects;
-    let newAssignments = state.assignments;
-    
-    let processedFiles = 0;
-
-    files.forEach(file => {
-        const reader = new FileReader();
-        reader.onload = function(event) {
-            const lines = event.target.result.split('\n');
-            const header = lines[0].trim();
-            
-            const parsedData = [];
-            for(let i=1; i<lines.length; i++) {
-                const line = lines[i].trim();
-                if(!line) continue;
-                parsedData.push(line.split(';'));
-            }
-
-            if (header.includes('maxCapacity')) {
-                newPeople = parsedData.map(c => ({ id: c[0], initials: c[1], fullName: c[2], group: c[3], maxCapacity: parseInt(c[4]), active: c[5] === 'true' }));
-            } else if (header.includes('pmId')) {
-                newProjects = parsedData.map(c => ({ id: c[0], name: c[1], status: c[2], pmId: c[3] || '' }));
-            } else if (header.includes('percentage')) {
-                newAssignments = parsedData.map(c => ({ week: c[0], personId: c[1], projectId: c[2], percentage: parseInt(c[3]) }));
-            }
-            
-            processedFiles++;
-            if (processedFiles === files.length) {
-                if (confirm('Importovat data z vybraných souborů? Stávající data budou nahrazena.')) {
-                    state = { people: newPeople, projects: newProjects, assignments: newAssignments };
-                    saveState();
-                    location.reload();
-                }
-            }
-        };
-        reader.readAsText(file, "UTF-8");
-    });
-}
-
+// Reakce na kliknutí na tlačítko "Vstoupit"
 document.getElementById('login-btn').onclick = () => {
     const user = document.getElementById('login-user').value;
     const pass = document.getElementById('login-pass').value;
     
+    // Extrémně jednoduchá kontrola jména a hesla
     if (user === 'bootiq' && pass === 'pmplzen') {
+        // Uložíme si info, že se úspěšně přihlásil, aby to po něm nechtělo heslo znova
+        localStorage.setItem('bootiq_planner_logged_in', 'true');
+        
+        // Schováme přihlašovací okno a ukážeme aplikaci
         document.getElementById('login-overlay').style.display = 'none';
         document.getElementById('app-wrapper').style.display = 'flex';
-        init();
+        init(); // Spustí hlavní aplikaci
     } else {
+        // Pokud zadal blbosti, ukážeme chybu
         document.getElementById('login-error').style.display = 'block';
     }
 };
 
+// Aby to fungovalo i na klávesu "Enter", když člověk píše heslo
 document.getElementById('login-pass').addEventListener('keypress', function (e) {
     if (e.key === 'Enter') document.getElementById('login-btn').click();
 });
